@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+dist/
+tsconfig.tsbuildinfo
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.claude/settings.local.json
+
+# Build artifacts
+*.egg-info/
+
+# Database
+*.db
+*.db-journal
+backend/backups/
+
+# Personal progress tracking / manual testing
+IDEAS.md
+PLANIT.md
+backend/test_digest.py
+backend/test_email.py
+digest-preview.html
