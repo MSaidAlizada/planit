@@ -10,6 +10,7 @@ COPY pyproject.toml /app/pyproject.toml
 COPY app /app/app
 COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations
+COPY manage_users.py /app/manage_users.py
 
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir . \

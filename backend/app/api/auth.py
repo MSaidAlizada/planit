@@ -19,6 +19,7 @@ from app.services.auth_service import (
     refresh_token_expiry,
     verify_password,
 )
+from app.services.user_service import delete_user_and_data
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -305,9 +306,7 @@ def delete_account(
     if not verify_password(body.password, current_user.hashed_password):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect password")
     user = session.get(User, current_user.id)
-    for t in session.exec(select(RefreshToken).where(RefreshToken.user_id == user.id)).all():
-        session.delete(t)
-    session.delete(user)
+    delete_user_and_data(session, user)
     session.commit()
 
 
