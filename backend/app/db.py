@@ -32,6 +32,12 @@ def init_db() -> None:
 def _run_alembic_migrations() -> None:
     """Run pending Alembic migrations (idempotent — safe to call every startup)."""
     if not _ALEMBIC_INI.exists():
+        import logging
+        logging.getLogger(__name__).warning(
+            "alembic.ini not found at %s — skipping migrations. "
+            "If this is a Docker deployment, alembic.ini and migrations/ must be copied into the image.",
+            _ALEMBIC_INI,
+        )
         return
     try:
         from alembic.config import Config
