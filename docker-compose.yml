@@ -9,6 +9,11 @@ services:
     volumes:
       - planit_data:/data
     restart: unless-stopped
+    # Bound to localhost only — Tailscale Funnel (running on the host) reaches
+    # this to publish the backend, and the frontend's nginx also proxies to it
+    # over the Docker network. Never exposed on the LAN-wide interface directly.
+    ports:
+      - "127.0.0.1:8000:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s

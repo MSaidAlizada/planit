@@ -1,4 +1,16 @@
 // ── Auth helpers ─────────────────────────────────────────────────────────
+//
+// The frontend and backend live on different origins (GitHub Pages + a
+// Tailscale Funnel hostname), so auth can't rely on cookies — cross-site
+// cookies are unreliably blocked by Safari/Chrome's third-party cookie
+// policies. Instead the backend issues a short-lived access token (kept in
+// memory only) plus a longer-lived refresh token (persisted in localStorage
+// so a page reload doesn't force a re-login). A 401 triggers one transparent
+// refresh-and-retry; if that also fails, the caller sees the 401.
+
+const API_BASE_URL: string = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+const REFRESH_KEY = 'planit_refresh_token';
+const USER_KEY = 'planit_user_info';
 
 export type AuthUser = {
   user_id: string;
@@ -6,37 +18,133 @@ export type AuthUser = {
   display_name: string;
 };
 
-// Token is set as an httpOnly cookie by the server — never exposed to JS.
-// These response types only carry non-sensitive user info.
-export type UserInfoResponse = {
+export type UserInfoResponse = AuthUser;
+
+type TokenBundle = {
+  access_token: string;
+  refresh_token: string;
   user_id: string;
   username: string;
   display_name: string;
 };
 
-// credentials: 'include' ensures the session cookie is sent on every request.
-// Since the Vite dev proxy makes all /api calls same-origin this is redundant
-// in development, but required if the frontend ever talks to the backend directly.
-function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  return fetch(url, { ...options, credentials: 'include' });
+let accessToken: string | null = null;
+let refreshToken: string | null = localStorage.getItem(REFRESH_KEY);
+let refreshInFlight: Promise<boolean> | null = null;
+
+function apiUrl(path: string): string {
+  return API_BASE_URL ? `${API_BASE_URL}${path}` : path;
 }
 
-export async function register(username: string, password: string, displayName?: string): Promise<UserInfoResponse> {
-  const res = await fetch('/api/auth/register', {
+function storeTokens(bundle: TokenBundle): AuthUser {
+  accessToken = bundle.access_token;
+  refreshToken = bundle.refresh_token;
+  localStorage.setItem(REFRESH_KEY, bundle.refresh_token);
+  const user: AuthUser = { user_id: bundle.user_id, username: bundle.username, display_name: bundle.display_name };
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  return user;
+}
+
+function clearTokens(): void {
+  accessToken = null;
+  refreshToken = null;
+  localStorage.removeItem(REFRESH_KEY);
+  localStorage.removeItem(USER_KEY);
+}
+
+// Cached display info for instant UI paint on reload, before bootstrapSession()
+// confirms (or rejects) it against the server.
+export function getCachedUser(): AuthUser | null {
+  const raw = localStorage.getItem(USER_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function doRefresh(): Promise<boolean> {
+  if (!refreshToken) return false;
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const res = await fetch(apiUrl('/api/auth/refresh'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+        if (!res.ok) {
+          clearTokens();
+          return false;
+        }
+        storeTokens(await res.json());
+        return true;
+      } catch {
+        return false;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+  return refreshInFlight;
+}
+
+// On app load, silently exchange the stored refresh token for a fresh
+// access token. Returns the confirmed user, or null if there's no valid
+// session (nothing stored, or the refresh token was rejected/expired).
+export async function bootstrapSession(): Promise<AuthUser | null> {
+  if (!refreshToken) return null;
+  const ok = await doRefresh();
+  if (!ok) return null;
+  return getCachedUser();
+}
+
+function authFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  const withAuth = (): RequestInit => ({
+    ...options,
+    headers: { ...(options.headers ?? {}), ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+  });
+  return fetch(apiUrl(path), withAuth()).then(async (res) => {
+    if (res.status !== 401 || !refreshToken) return res;
+    const refreshed = await doRefresh();
+    if (!refreshed) return res;
+    return fetch(apiUrl(path), withAuth());
+  });
+}
+
+export async function register(
+  username: string,
+  password: string,
+  displayName?: string,
+  inviteCode?: string,
+): Promise<AuthUser> {
+  const res = await fetch(apiUrl('/api/auth/register'), {
     method: 'POST',
-    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, display_name: displayName ?? '' }),
+    body: JSON.stringify({
+      username,
+      password,
+      display_name: displayName ?? '',
+      invite_code: inviteCode || undefined,
+    }),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({ detail: 'Registration failed' }));
     throw new Error(data.detail ?? 'Registration failed');
   }
-  return res.json();
+  return storeTokens(await res.json());
 }
 
 export async function logoutUser(): Promise<void> {
-  await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+  const token = refreshToken;
+  clearTokens();
+  if (!token) return;
+  await fetch(apiUrl('/api/auth/logout'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: token }),
+  }).catch(() => {});
 }
 
 export async function updateProfile(displayName: string): Promise<AuthUser> {
@@ -76,10 +184,9 @@ export async function deleteAccount(password: string): Promise<void> {
   }
 }
 
-export async function loginUser(username: string, password: string): Promise<UserInfoResponse> {
-  const res = await fetch('/api/auth/login', {
+export async function loginUser(username: string, password: string): Promise<AuthUser> {
+  const res = await fetch(apiUrl('/api/auth/login'), {
     method: 'POST',
-    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
   });
@@ -87,7 +194,7 @@ export async function loginUser(username: string, password: string): Promise<Use
     const data = await res.json().catch(() => ({ detail: 'Login failed' }));
     throw new Error(data.detail ?? 'Login failed');
   }
-  return res.json();
+  return storeTokens(await res.json());
 }
 
 // ── Tasks ────────────────────────────────────────────────────────────────

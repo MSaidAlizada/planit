@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>planit</title>
+    <script>
+      // GitHub Pages serves no server-side routing, so a direct link or a
+      // full-page redirect (e.g. the Google OAuth callback) to a path like
+      // /planit/settings hits this 404 page instead of the SPA. Redirect
+      // back to the app's root with the intended path encoded in a query
+      // param; main.tsx restores it via history.replaceState before the
+      // app's own router reads window.location.
+      //
+      // NOTE: this base must match vite.config.ts's VITE_BASE_PATH build
+      // (the GitHub Pages project-page path) — update both if the repo
+      // is ever renamed.
+      var base = '/planit';
+      var path = location.pathname.slice(base.length) + location.search + location.hash;
+      location.replace(base + '/?redirect=' + encodeURIComponent(path));
+    </script>
+  </head>
+  <body></body>
+</html>

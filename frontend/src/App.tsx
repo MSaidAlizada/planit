@@ -58,6 +58,7 @@ export default function App() {
   const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authDisplayName, setAuthDisplayName] = useState('');
+  const [authInviteCode, setAuthInviteCode] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
@@ -70,13 +71,16 @@ export default function App() {
   const [showAddTask, setShowAddTask] = useState(false);
 
   // ── URL-based routing ──────────────────────────────────────────────────
+  // Paths are relative to Vite's BASE_URL so this also works when the app is
+  // served from a subpath (e.g. GitHub Pages' /planit/ project-page path).
+  const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
   const TAB_PATHS: Record<string, string> = {
-    dashboard: '/',
-    tasks:     '/tasks',
-    calendar:  '/calendar',
-    habits:    '/habits',
-    stats:     '/stats',
-    settings:  '/settings',
+    dashboard: `${BASE}/`,
+    tasks:     `${BASE}/tasks`,
+    calendar:  `${BASE}/calendar`,
+    habits:    `${BASE}/habits`,
+    stats:     `${BASE}/stats`,
+    settings:  `${BASE}/settings`,
   };
   const PATH_TABS: Record<string, string> = Object.fromEntries(
     Object.entries(TAB_PATHS).map(([tab, path]) => [path, tab]),
@@ -203,7 +207,7 @@ export default function App() {
     setAuthError(null);
     setAuthSubmitting(true);
     try {
-      const data = await register(authUsername, authPassword, authDisplayName);
+      const data = await register(authUsername, authPassword, authDisplayName, authInviteCode);
       authLogin({ user_id: data.user_id, username: data.username, display_name: data.display_name });
     } catch (err) {
       setAuthError(String(err).replace('Error: ', ''));
@@ -427,6 +431,18 @@ export default function App() {
                     placeholder="••••••••"
                     autoComplete="new-password"
                     required
+                  />
+                </div>
+                <div className="form-field">
+                  <label className="field-label" htmlFor="regInviteCode">
+                    Invite code <span className="field-optional">not needed for the first account</span>
+                  </label>
+                  <input
+                    id="regInviteCode"
+                    value={authInviteCode}
+                    onChange={(e) => setAuthInviteCode(e.target.value)}
+                    placeholder="Ask whoever invited you"
+                    autoCapitalize="characters"
                   />
                 </div>
                 {authError && <div className="panel-error">{authError}</div>}

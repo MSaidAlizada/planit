@@ -1,16 +1,14 @@
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlmodel import Session
 
 from app.db import get_session
 from app.models import User
-from app.services.auth_service import decode_token
+from app.services.auth_service import decode_access_token
 
 _bearer = HTTPBearer(auto_error=False)
-
-_COOKIE_NAME = "planit_session"
 
 
 def _session_dep():
@@ -19,21 +17,13 @@ def _session_dep():
 
 
 def get_current_user(
-    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     session: Session = Depends(_session_dep),
 ) -> User:
-    # Prefer explicit Bearer token (API clients), fall back to httpOnly session cookie (browser).
-    token: str | None = None
-    if credentials:
-        token = credentials.credentials
-    else:
-        token = request.cookies.get(_COOKIE_NAME)
-
-    if not token:
+    if not credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    user_id = decode_token(token)
+    user_id = decode_access_token(credentials.credentials)
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
@@ -47,3 +37,9 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
     return user
+
+
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    return current_user

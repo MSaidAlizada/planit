@@ -8,7 +8,7 @@ _DEV_SECRET = "planit-dev-secret-change-me-in-production"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     environment: str = "development"  # set ENVIRONMENT=production in prod
 
@@ -26,7 +26,19 @@ class Settings(BaseSettings):
     # Generate one with: python -c "import secrets; print(secrets.token_hex(32))"
     jwt_secret_key: str = _DEV_SECRET
     jwt_algorithm: str = "HS256"
-    jwt_expire_days: int = 30
+
+    # Access tokens are short-lived JWTs sent as Authorization: Bearer.
+    # Refresh tokens are long-lived opaque strings, rotated on every use.
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 30
+
+    # Login brute-force protection
+    login_max_attempts: int = 5
+    login_lockout_minutes: int = 15
+
+    # Invite-gated registration — the very first user (empty DB) never needs
+    # a code and becomes admin; everyone after that needs one issued by an admin.
+    registration_requires_invite: bool = True
 
     # Email (SMTP) — set these in backend/.env to enable sending
     # Gmail: use an App Password (Google Account → Security → 2-Step → App passwords)

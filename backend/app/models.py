@@ -23,6 +23,35 @@ class User(SQLModel, table=True):
     email_verified: bool = False
     email_verify_token: str = ""
     email_verify_expires: Optional[datetime] = None
+    # Auth hardening
+    is_admin: bool = False
+    failed_login_attempts: int = 0
+    locked_until: Optional[datetime] = None
+
+
+class RefreshToken(SQLModel, table=True):
+    """Opaque, rotating refresh tokens. Only a hash of the token is stored,
+    so a DB read never discloses a usable credential. `family_id` links every
+    token descended from one login — reusing an already-rotated token revokes
+    the whole family (theft/replay detection)."""
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(foreign_key="user.id", index=True)
+    family_id: UUID = Field(index=True)
+    token_hash: str = Field(unique=True, index=True)
+    created_at: datetime = Field(default_factory=_utcnow)
+    expires_at: datetime
+    revoked_at: Optional[datetime] = None
+
+
+class InviteCode(SQLModel, table=True):
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    code: str = Field(unique=True, index=True)
+    created_by_user_id: UUID = Field(foreign_key="user.id")
+    max_uses: int = 1
+    use_count: int = 0
+    expires_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=_utcnow)
+    is_active: bool = True
 
 
 class TaskStatus(str, Enum):
