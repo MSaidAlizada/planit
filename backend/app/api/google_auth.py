@@ -132,7 +132,6 @@ def google_callback(
 
     # Validate state before exchanging the code — no state means we can't
     # safely associate the credential with a user, so reject immediately.
-    import logging
     user_id = gcs.pop_user_id_for_state(state or "")
     if not user_id:
         logging.warning("Google OAuth callback: missing or unrecognised state param")
@@ -140,19 +139,19 @@ def google_callback(
 
     try:
         new_cred = gcs.exchange_code(code, state or "")
+
+        # Replace any existing credential for this user
+        existing = session.exec(
+            select(GoogleCredential).where(GoogleCredential.user_id == user_id)
+        ).first()
+        if existing:
+            session.delete(existing)
+        new_cred.user_id = user_id
+
+        session.add(new_cred)
+        session.commit()
     except Exception:
-        logging.exception("Google OAuth exchange failed")
+        logging.exception("Google OAuth callback failed")
         return RedirectResponse(f"{frontend}/settings?google=error&reason=exchange_failed")
-
-    # Replace any existing credential for this user
-    existing = session.exec(
-        select(GoogleCredential).where(GoogleCredential.user_id == user_id)
-    ).first()
-    if existing:
-        session.delete(existing)
-    new_cred.user_id = user_id
-
-    session.add(new_cred)
-    session.commit()
 
     return RedirectResponse(f"{frontend}/settings?google=connected")

@@ -15,7 +15,11 @@ from sqlmodel import SQLModel
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False — this runs at every app startup (see
+    # db.py's _run_alembic_migrations), and the default True would silence
+    # uvicorn's own loggers (including its unhandled-exception tracebacks)
+    # since they're not listed in alembic.ini's [loggers] section.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = SQLModel.metadata
 
