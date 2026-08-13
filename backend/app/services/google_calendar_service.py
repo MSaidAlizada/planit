@@ -19,6 +19,12 @@ from app.models import CalendarEvent, GoogleCredential
 if os.getenv("ENVIRONMENT", "development") != "production":
     os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
+# Google sometimes grants a broader scope than requested (e.g. bundling
+# calendar.readonly alongside calendar.events, based on the account's prior
+# grants) — oauthlib treats any scope mismatch as a hard error by default.
+# The extra scope is harmless here since we only ever use the events API.
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+
 logger = logging.getLogger(__name__)
 
 # calendar.events grants read + write access to events (not calendar settings).
