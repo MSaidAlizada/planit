@@ -7,6 +7,7 @@ The rest are under /api/google for frontend use.
 import logging
 from datetime import datetime, timezone
 from typing import Iterator
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
@@ -132,9 +133,20 @@ def google_callback(
 
     # Validate state before exchanging the code — no state means we can't
     # safely associate the credential with a user, so reject immediately.
-    user_id = gcs.pop_user_id_for_state(state or "")
-    if not user_id:
+    raw_user_id = gcs.pop_user_id_for_state(state or "")
+    if not raw_user_id:
         logging.warning("Google OAuth callback: missing or unrecognised state param")
+        return RedirectResponse(f"{frontend}/settings?google=error&reason=invalid_state")
+
+    try:
+        # pop_user_id_for_state returns the plain string stashed by
+        # create_auth_url; GoogleCredential.user_id is a UUID-typed column,
+        # so it must be a real UUID instance, not a string, or SQLAlchemy's
+        # bind-parameter processing throws (AttributeError: 'str' object
+        # has no attribute 'hex').
+        user_id = UUID(raw_user_id)
+    except ValueError:
+        logging.warning("Google OAuth callback: malformed user id in state")
         return RedirectResponse(f"{frontend}/settings?google=error&reason=invalid_state")
 
     try:
