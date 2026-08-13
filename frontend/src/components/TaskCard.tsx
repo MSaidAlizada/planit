@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { fetchSubtasks, updateSubtask, type Subtask } from '../lib/api';
-import { localDateKey } from '../lib/date';
+import { localDateKey, parseUTC } from '../lib/date';
 
 const LOAD_COLORS = ['', '#9dc8aa', '#6ab88a', '#e2b540', '#e07840', '#cc4430'];
 
 function formatDeadline(deadline_at?: string | null): { label: string; cls: string } | null {
   if (!deadline_at) return null;
   const now = new Date();
-  const due = new Date(deadline_at);
+  const due = parseUTC(deadline_at);
   const diffMs = due.getTime() - now.getTime();
   const diffH  = diffMs / (1000 * 60 * 60);
   const diffD  = diffMs / (1000 * 60 * 60 * 24);

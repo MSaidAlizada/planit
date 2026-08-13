@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import List
+from zoneinfo import ZoneInfo
 import copy
 import json
 
@@ -8,6 +9,36 @@ from app.models import CalendarEvent, Context, Task, Preference
 
 def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _local_tz(tz_name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def _local_wall_time_to_utc(local_date, hour: int, minute: int, tz: ZoneInfo) -> datetime:
+    """A user's wall-clock hour:minute on a given local calendar date, as naive UTC.
+
+    Goes through an aware datetime so DST transitions are handled correctly
+    for that specific date, then strips tzinfo to match the rest of the
+    scheduler's naive-UTC convention.
+    """
+    aware = datetime(local_date.year, local_date.month, local_date.day, hour, minute, tzinfo=tz)
+    return aware.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _local_dates_spanning(start_utc: datetime, end_utc: datetime, tz: ZoneInfo) -> list:
+    """Local calendar dates (inclusive) covering a naive-UTC datetime range."""
+    start_local = start_utc.replace(tzinfo=timezone.utc).astimezone(tz).date()
+    end_local = end_utc.replace(tzinfo=timezone.utc).astimezone(tz).date()
+    dates = []
+    day = start_local
+    while day <= end_local:
+        dates.append(day)
+        day += timedelta(days=1)
+    return dates
 
 
 def find_free_slots(
@@ -23,6 +54,7 @@ def find_free_slots(
     sleep_start_hour = int(preferences.sleep_start.split(":")[0])
     sleep_end_hour = int(preferences.sleep_end.split(":")[0])
     buffer_mins = preferences.buffer_minutes
+    tz = _local_tz(preferences.timezone)
 
     busy_blocks: list[tuple[datetime, datetime]] = []
     for event in busy_events:
@@ -30,13 +62,12 @@ def find_free_slots(
             # event.start_at / end_at are already datetime objects from SQLModel
             busy_blocks.append((event.start_at, event.end_at))
 
-    # Add sleep windows for each day in the range
-    current = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    while current <= end_date:
-        sleep_start_dt = current.replace(hour=sleep_start_hour, minute=0, second=0, microsecond=0)
-        sleep_end_dt = (current + timedelta(days=1)).replace(hour=sleep_end_hour, minute=0, second=0, microsecond=0)
+    # Add sleep windows for each local calendar day in the range — sleep_start
+    # / sleep_end are wall-clock hours in the user's own timezone, not UTC.
+    for local_day in _local_dates_spanning(start_date, end_date, tz):
+        sleep_start_dt = _local_wall_time_to_utc(local_day, sleep_start_hour, 0, tz)
+        sleep_end_dt = _local_wall_time_to_utc(local_day + timedelta(days=1), sleep_end_hour, 0, tz)
         busy_blocks.append((sleep_start_dt, sleep_end_dt))
-        current += timedelta(days=1)
 
     busy_blocks.sort(key=lambda x: x[0])
 
@@ -98,8 +129,13 @@ def _clip_slot_to_context(
     slot_start: datetime,
     slot_end: datetime,
     availability_json: str,
+    tz: ZoneInfo = ZoneInfo("UTC"),
 ) -> list[tuple[datetime, datetime]]:
-    """Return sub-intervals of [slot_start, slot_end] within the context's availability windows."""
+    """Return sub-intervals of [slot_start, slot_end] within the context's availability windows.
+
+    Window start/end/days are wall-clock hours and weekdays in the user's own
+    timezone (e.g. "Work" = Mon-Fri 09:00-17:00 local), not UTC.
+    """
     try:
         windows = json.loads(availability_json)
     except (json.JSONDecodeError, TypeError):
@@ -110,10 +146,8 @@ def _clip_slot_to_context(
         return [(slot_start, slot_end)]
 
     results: list[tuple[datetime, datetime]] = []
-    day = slot_start.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_day = slot_end.replace(hour=0, minute=0, second=0, microsecond=0)
-    while day <= end_day:
-        weekday = day.weekday()  # 0=Mon, 6=Sun
+    for local_day in _local_dates_spanning(slot_start, slot_end, tz):
+        weekday = local_day.weekday()  # 0=Mon, 6=Sun
         for window in windows:
             if weekday not in window.get("days", []):
                 continue
@@ -122,13 +156,12 @@ def _clip_slot_to_context(
                 eh, em = map(int, window["end"].split(":"))
             except (KeyError, ValueError):
                 continue
-            win_start = day.replace(hour=wh, minute=wm, second=0, microsecond=0)
-            win_end = day.replace(hour=eh, minute=em, second=0, microsecond=0)
+            win_start = _local_wall_time_to_utc(local_day, wh, wm, tz)
+            win_end = _local_wall_time_to_utc(local_day, eh, em, tz)
             clip_start = max(slot_start, win_start)
             clip_end = min(slot_end, win_end)
             if clip_start < clip_end:
                 results.append((clip_start, clip_end))
-        day += timedelta(days=1)
 
     results.sort(key=lambda x: x[0])
     return results
@@ -237,6 +270,7 @@ def _fit_tasks_into_slots(
         preferences = Preference()
     if context_map is None:
         context_map = {}
+    tz = _local_tz(preferences.timezone)
 
     placements: dict[str, dict] = {}
     total_score = 0.0
@@ -247,7 +281,7 @@ def _fit_tasks_into_slots(
         for i, (slot_start, slot_end) in enumerate(free_slots):
             if context is not None:
                 # Clip this free slot to the context's availability windows
-                sub_slots = _clip_slot_to_context(slot_start, slot_end, context.availability)
+                sub_slots = _clip_slot_to_context(slot_start, slot_end, context.availability, tz)
                 placed = False
                 for sub_start, sub_end in sub_slots:
                     if (sub_end - sub_start).total_seconds() / 60 < task.duration_minutes:

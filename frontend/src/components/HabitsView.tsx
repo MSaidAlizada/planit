@@ -4,12 +4,13 @@ import {
   fetchHabitHeatmap,
   type Habit, type HabitHeatmapDay,
 } from '../lib/api';
+import { parseUTC } from '../lib/date';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function isCompletedToday(lastCompletedAt?: string | null): boolean {
   if (!lastCompletedAt) return false;
-  const d = new Date(lastCompletedAt);
+  const d = parseUTC(lastCompletedAt);
   const now = new Date();
   return (
     d.getFullYear() === now.getFullYear() &&
@@ -20,7 +21,7 @@ function isCompletedToday(lastCompletedAt?: string | null): boolean {
 
 function formatNextDue(value?: string | null): string {
   if (!value) return '';
-  const d = new Date(value);
+  const d = parseUTC(value);
   const now = new Date();
   const diffH = (d.getTime() - now.getTime()) / (1000 * 60 * 60);
   if (diffH < 0) return 'overdue';

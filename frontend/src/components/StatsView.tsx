@@ -1,4 +1,5 @@
 import type { Habit, Task } from '../lib/api';
+import { localDateKey, parseUTC } from '../lib/date';
 
 type Props = { tasks: Task[]; habits: Habit[] };
 
@@ -26,13 +27,13 @@ export default function StatsView({ tasks, habits }: Props) {
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today);
     d.setDate(d.getDate() - (6 - i));
-    return d.toISOString().split('T')[0];
+    return localDateKey(d);
   });
   const byDay: Record<string, number> = Object.fromEntries(weekDays.map((d) => [d, 0]));
   tasks
     .filter((t) => t.status === 'completed')
     .forEach((t) => {
-      const day = t.updated_at.split('T')[0];
+      const day = localDateKey(parseUTC(t.updated_at));
       if (day in byDay) byDay[day]++;
     });
   const maxBar = Math.max(1, ...Object.values(byDay));
@@ -79,7 +80,7 @@ export default function StatsView({ tasks, habits }: Props) {
           {weekDays.map((day, i) => {
             const count  = byDay[day];
             const height = Math.round((count / maxBar) * 100);
-            const isToday = day === today.toISOString().split('T')[0];
+            const isToday = day === localDateKey(today);
             return (
               <div key={day} className="week-chart__col">
                 <div className="week-chart__bar-wrap">

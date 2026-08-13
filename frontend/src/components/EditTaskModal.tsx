@@ -10,6 +10,7 @@ import {
   type Subtask,
   type Task,
 } from '../lib/api';
+import { localDateKey, parseUTC } from '../lib/date';
 
 type Props = {
   task: Task;
@@ -38,8 +39,8 @@ export default function EditTaskModal({ task, categories, contexts, onSave, onCl
 
   useEffect(() => {
     if (task.deadline_at) {
-      const d = new Date(task.deadline_at);
-      setDeadlineDate(d.toISOString().split('T')[0]);
+      const d = parseUTC(task.deadline_at);
+      setDeadlineDate(localDateKey(d));
       setDeadlineTime(
         `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
       );

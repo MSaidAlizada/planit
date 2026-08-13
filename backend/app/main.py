@@ -85,13 +85,12 @@ def _sync_feeds() -> None:
 
 
 def _send_digests() -> None:
-    """Fire digest emails for users whose configured time matches now (UTC, minute precision)."""
+    """Fire digest emails for users whose configured local time matches now (minute precision)."""
+    from zoneinfo import ZoneInfo
     from app.models import User, Preference
     from app.services.email_service import build_digest_html, send_digest_email
 
     now = datetime.now(timezone.utc)
-    current_hhmm = now.strftime("%H:%M")
-    current_isoweekday = now.isoweekday()  # 1=Mon … 7=Sun
 
     try:
         with get_session() as session:
@@ -104,6 +103,14 @@ def _send_digests() -> None:
                 ).first()
                 if not prefs or not prefs.digest_enabled:
                     continue
+                try:
+                    tz = ZoneInfo(prefs.timezone)
+                except Exception:
+                    tz = timezone.utc
+                local_now = now.astimezone(tz)
+                current_hhmm = local_now.strftime("%H:%M")
+                current_isoweekday = local_now.isoweekday()  # 1=Mon … 7=Sun
+
                 matches_daily = (
                     prefs.digest_frequency == "daily"
                     and prefs.digest_time == current_hhmm

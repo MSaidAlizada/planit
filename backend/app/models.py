@@ -133,14 +133,17 @@ class CalendarEvent(SQLModel, table=True):
 class Preference(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: Optional[UUID] = Field(default=None, foreign_key="user.id", index=True)
-    sleep_start: str = "23:00"
-    sleep_end: str = "07:00"
+    sleep_start: str = "23:00"       # HH:MM in `timezone` below
+    sleep_end: str = "07:00"         # HH:MM in `timezone` below
     buffer_minutes: int = 15
     max_daily_load: int = 8
+    # IANA name, e.g. "America/New_York" — all wall-clock preferences above
+    # and below are interpreted in this zone, not UTC.
+    timezone: str = "UTC"
     # Email digest
     digest_enabled: bool = False
     digest_frequency: str = "daily"  # "daily" | "weekly"
-    digest_time: str = "07:00"       # HH:MM UTC
+    digest_time: str = "07:00"       # HH:MM in `timezone` above
     digest_day: int = 1              # ISO weekday 1=Mon … 7=Sun (weekly only)
 
 

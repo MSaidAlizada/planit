@@ -515,6 +515,7 @@ export type Preferences = {
   sleep_end: string;
   buffer_minutes: number;
   max_daily_load: number;
+  timezone: string;
 };
 
 export async function getPreferences(): Promise<Preferences> {

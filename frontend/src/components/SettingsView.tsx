@@ -10,9 +10,28 @@ import {
   getDigestStatus, sendVerificationCode, confirmVerificationCode,
   updateDigestSettings, sendTestDigest, type DigestStatus,
 } from '../lib/api';
+import { parseUTC } from '../lib/date';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useTheme, THEMES, COLOR_LABELS, type ColorKey } from '../context/ThemeContext';
+
+// IANA timezone names for the Preferences timezone picker. Intl.supportedValuesOf
+// covers essentially all modern browsers; fall back to a short common list
+// (plus the account's current value, added separately) if it's unavailable.
+const TIMEZONE_OPTIONS: string[] = (() => {
+  try {
+    if (typeof Intl.supportedValuesOf === 'function') return Intl.supportedValuesOf('timeZone');
+  } catch {
+    // fall through to the static list below
+  }
+  return [
+    'UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+    'America/Anchorage', 'Pacific/Honolulu', 'America/Sao_Paulo', 'Europe/London',
+    'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow', 'Africa/Cairo', 'Asia/Dubai',
+    'Asia/Kolkata', 'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul', 'Australia/Sydney',
+    'Pacific/Auckland',
+  ];
+})();
 
 // ── Appearance ────────────────────────────────────────────────────────────
 
@@ -397,7 +416,21 @@ function PreferencesSection() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    getPreferences().then(setPrefs).catch(() => {});
+    getPreferences().then((data) => {
+      // "UTC" is the server-side default for accounts that have never set
+      // this — prefill with the browser's detected zone so a first-time
+      // visitor doesn't have to know their own IANA timezone name. Not
+      // saved until they hit Save.
+      if (data.timezone === 'UTC') {
+        try {
+          const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          if (detected) data = { ...data, timezone: detected };
+        } catch {
+          // Intl not available — leave as UTC.
+        }
+      }
+      setPrefs(data);
+    }).catch(() => {});
   }, []);
 
   async function handleSave() {
@@ -418,6 +451,28 @@ function PreferencesSection() {
 
   return (
     <div className="form-shell">
+      <div className="form-section">
+        <div className="section-copy">
+          <h4>Timezone</h4>
+          <p>Sleep window, digest send time, and context hours below are all interpreted in this zone.</p>
+        </div>
+        <div className="form-field">
+          <label className="field-label" htmlFor="timezone">Timezone</label>
+          <select
+            id="timezone"
+            value={prefs.timezone}
+            onChange={(e) => setPrefs({ ...prefs, timezone: e.target.value })}
+          >
+            {!TIMEZONE_OPTIONS.includes(prefs.timezone) && (
+              <option value={prefs.timezone}>{prefs.timezone}</option>
+            )}
+            {TIMEZONE_OPTIONS.map((tz) => (
+              <option key={tz} value={tz}>{tz}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       <div className="form-section">
         <div className="section-copy">
           <h4>Sleep window</h4>
@@ -547,7 +602,7 @@ function ICalSection() {
                 <span className="feed-row__name">{feed.name}</span>
                 <span className="feed-row__meta">
                   {feed.last_synced_at
-                    ? `${feed.event_count} events · synced ${new Date(feed.last_synced_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                    ? `${feed.event_count} events · synced ${parseUTC(feed.last_synced_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
                     : 'Never synced'}
                 </span>
               </div>
@@ -701,7 +756,7 @@ function GoogleSection() {
               <div style={{ fontSize: '0.83rem', color: 'var(--muted)' }}>
                 {status.email}
                 {status.last_synced_at && (
-                  <> · Last synced {new Date(status.last_synced_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</>
+                  <> · Last synced {parseUTC(status.last_synced_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</>
                 )}
               </div>
             </div>
@@ -1083,7 +1138,7 @@ function DigestSection() {
 
               {/* Time */}
               <div className="form-field" style={{ maxWidth: 160 }}>
-                <label className="field-label">Send at (UTC)</label>
+                <label className="field-label">Send at (your local time)</label>
                 <input
                   type="time"
                   value={status.digest_time}

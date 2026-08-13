@@ -32,6 +32,7 @@ import {
   type Context,
   type Habit,
 } from './lib/api';
+import { localDateKey, parseUTC } from './lib/date';
 
 type ScheduleSuggestion = {
   name: string;
@@ -41,10 +42,6 @@ type ScheduleSuggestion = {
   placed: number;
   total: number;
 };
-
-function formatDateKey(d: Date) {
-  return d.toISOString().split('T')[0];
-}
 
 export default function App() {
   const { addToast } = useToast();
@@ -149,11 +146,11 @@ export default function App() {
     return groups;
   }, [tasks, categories]);
 
-  const todayKey = formatDateKey(new Date());
+  const todayKey = localDateKey(new Date());
   const todayTasks = useMemo(() =>
     (tasks ?? [])
-      .filter((t) => t.status === 'scheduled' && t.scheduled_start_at?.split('T')[0] === todayKey)
-      .sort((a, b) => new Date(a.scheduled_start_at!).getTime() - new Date(b.scheduled_start_at!).getTime()),
+      .filter((t) => t.status === 'scheduled' && t.scheduled_start_at && localDateKey(parseUTC(t.scheduled_start_at)) === todayKey)
+      .sort((a, b) => parseUTC(a.scheduled_start_at!).getTime() - parseUTC(b.scheduled_start_at!).getTime()),
     [tasks, todayKey],
   );
 
@@ -162,7 +159,7 @@ export default function App() {
   const overdueTasks = useMemo(() => {
     const now = new Date();
     return (tasks ?? []).filter(
-      (t) => t.status === 'scheduled' && t.scheduled_end_at && new Date(t.scheduled_end_at) < now,
+      (t) => t.status === 'scheduled' && t.scheduled_end_at && parseUTC(t.scheduled_end_at) < now,
     );
   }, [tasks]);
 
@@ -174,8 +171,8 @@ export default function App() {
         t.deadline_at &&
         t.status !== 'completed' &&
         t.status !== 'skipped' &&
-        new Date(t.deadline_at) > now &&
-        new Date(t.deadline_at) <= in24h,
+        parseUTC(t.deadline_at) > now &&
+        parseUTC(t.deadline_at) <= in24h,
     );
   }, [tasks]);
 
@@ -564,7 +561,7 @@ export default function App() {
                     {upcomingDeadlines.length} task{upcomingDeadlines.length > 1 ? 's' : ''} due within 24 hours
                   </div>
                   {upcomingDeadlines.map((t) => {
-                    const due = new Date(t.deadline_at!);
+                    const due = parseUTC(t.deadline_at!);
                     const diffH = Math.round((due.getTime() - Date.now()) / (1000 * 60 * 60));
                     return (
                       <div key={t.id} className="checkin-row">
@@ -589,7 +586,7 @@ export default function App() {
                     <div key={t.id} className="checkin-row">
                       <span className="checkin-row__title">{t.title}</span>
                       <span className="checkin-row__time">
-                        ended {new Date(t.scheduled_end_at!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        ended {parseUTC(t.scheduled_end_at!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                       <button
                         className="btn-ghost btn-sm"
@@ -626,7 +623,7 @@ export default function App() {
                   <div className="today-list">
                     {todayTasks.map((t) => {
                       const color = categoryColorMap.get(t.category_name ?? '') ?? 'var(--accent)';
-                      const start = new Date(t.scheduled_start_at!);
+                      const start = parseUTC(t.scheduled_start_at!);
                       const end   = new Date(start.getTime() + t.duration_minutes * 60000);
                       const fmt   = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
                       return (

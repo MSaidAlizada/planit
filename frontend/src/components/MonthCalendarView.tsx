@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createCalendarEvent, fetchCalendarEvents, deleteCalendarEvent, type CalendarEvent, type Category, type Task } from '../lib/api';
+import { localDateKey, parseUTC } from '../lib/date';
 
 type FormState = { title: string; start_time: string; end_time: string };
 type ViewMode = 'month' | 'week' | 'day';
@@ -11,12 +12,12 @@ const PX_PER_HOUR = 64;
 function startOfDay(date: Date) {
   const d = new Date(date); d.setHours(0, 0, 0, 0); return d;
 }
-function fmtKey(date: Date) { return date.toISOString().split('T')[0]; }
+// Local calendar day key/equality for grid cells — never derive this via
+// toISOString() (converts to UTC first), which mislabels "today" near local
+// midnight (any evening/night hours where the local day hasn't caught up to
+// UTC's yet).
+const fmtKey = localDateKey;
 function addDays(date: Date, n: number) { const d = new Date(date); d.setDate(d.getDate() + n); return d; }
-// Local calendar day equality — NOT fmtKey (which converts to UTC first).
-// Both `day.date` grid cells and `today` are plain local Date objects, so
-// comparing via UTC would mislabel "today" near local midnight (specifically,
-// any evening/night hours where the local day hasn't caught up to UTC's yet).
 function sameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
@@ -88,9 +89,9 @@ export default function MonthCalendarView({
     return {
       date,
       isCurrentMonth: viewMode !== 'month' || date.getMonth() === anchorDate.getMonth(),
-      events: (events ?? []).filter((e) => e.start_at.split('T')[0] === key),
-      tasks: scheduledTasks.filter((t) => t.scheduled_start_at?.split('T')[0] === key),
-      previews: previewPlacements.filter((p) => p.start.split('T')[0] === key),
+      events: (events ?? []).filter((e) => localDateKey(parseUTC(e.start_at)) === key),
+      tasks: scheduledTasks.filter((t) => t.scheduled_start_at && localDateKey(parseUTC(t.scheduled_start_at)) === key),
+      previews: previewPlacements.filter((p) => localDateKey(parseUTC(p.start)) === key),
     };
   }), [anchorDate, events, scheduledTasks, previewPlacements, calDays, viewMode]);
 
@@ -175,7 +176,7 @@ export default function MonthCalendarView({
           </div>
         )}
         {dayData.tasks.map((task) => {
-          const start = task.scheduled_start_at ? new Date(task.scheduled_start_at) : null;
+          const start = task.scheduled_start_at ? parseUTC(task.scheduled_start_at) : null;
           if (!start) return null;
           const topH   = start.getHours() + start.getMinutes() / 60;
           const heightH = (task.duration_minutes ?? 30) / 60;
@@ -196,7 +197,7 @@ export default function MonthCalendarView({
           );
         })}
         {dayData.previews.map((p) => {
-          const start  = new Date(p.start);
+          const start  = parseUTC(p.start);
           const topH   = start.getHours() + start.getMinutes() / 60;
           const heightH = p.duration / 60;
           return (
@@ -213,7 +214,7 @@ export default function MonthCalendarView({
           );
         })}
         {dayData.events.map((evt) => {
-          const start = new Date(evt.start_at), end = new Date(evt.end_at);
+          const start = parseUTC(evt.start_at), end = parseUTC(evt.end_at);
           const topH   = start.getHours() + start.getMinutes() / 60;
           const heightH = (end.getTime() - start.getTime()) / 3600000;
           return (
@@ -324,7 +325,7 @@ export default function MonthCalendarView({
             ) : (
               <div className="cal-month__agenda-list">
                 {selDayData?.tasks
-                  .slice().sort((a, b) => new Date(a.scheduled_start_at ?? '').getTime() - new Date(b.scheduled_start_at ?? '').getTime())
+                  .slice().sort((a, b) => parseUTC(a.scheduled_start_at ?? '').getTime() - parseUTC(b.scheduled_start_at ?? '').getTime())
                   .map((task) => (
                     <div
                       key={task.id}
@@ -336,7 +337,7 @@ export default function MonthCalendarView({
                         <span className="cal-agenda-row__title">{task.title}</span>
                         {task.scheduled_start_at && (
                           <span className="cal-agenda-row__time">
-                            {fmtTime(new Date(task.scheduled_start_at))}
+                            {fmtTime(parseUTC(task.scheduled_start_at))}
                             {task.duration_minutes ? ` · ${task.duration_minutes}m` : ''}
                           </span>
                         )}
@@ -344,27 +345,27 @@ export default function MonthCalendarView({
                     </div>
                   ))}
                 {selDayData?.previews
-                  .slice().sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+                  .slice().sort((a, b) => parseUTC(a.start).getTime() - parseUTC(b.start).getTime())
                   .map((p) => (
                     <div key={`preview-${p.task_id}`} className="cal-agenda-row cal-agenda-row--preview">
                       <div className="cal-agenda-row__dot" style={{ background: 'transparent', border: '1.5px dashed var(--accent)' }} />
                       <div className="cal-agenda-row__content">
                         <span className="cal-agenda-row__title" style={{ color: 'var(--accent-dark)' }}>{p.title}</span>
                         <span className="cal-agenda-row__time">
-                          {fmtTime(new Date(p.start))} · {p.duration}m · preview
+                          {fmtTime(parseUTC(p.start))} · {p.duration}m · preview
                         </span>
                       </div>
                     </div>
                   ))}
                 {selDayData?.events
-                  .slice().sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+                  .slice().sort((a, b) => parseUTC(a.start_at).getTime() - parseUTC(b.start_at).getTime())
                   .map((evt) => (
                     <div key={evt.id} className="cal-agenda-row cal-agenda-row--event">
                       <div className="cal-agenda-row__dot" style={{ background: 'var(--accent)' }} />
                       <div className="cal-agenda-row__content">
                         <span className="cal-agenda-row__title">{evt.title}</span>
                         <span className="cal-agenda-row__time">
-                          {fmtTime(new Date(evt.start_at))} – {fmtTime(new Date(evt.end_at))}
+                          {fmtTime(parseUTC(evt.start_at))} – {fmtTime(parseUTC(evt.end_at))}
                         </span>
                       </div>
                       <button
