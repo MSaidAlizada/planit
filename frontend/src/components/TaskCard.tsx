@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { fetchSubtasks, updateSubtask, type Subtask } from '../lib/api';
+import { localDateKey } from '../lib/date';
 
 const LOAD_COLORS = ['', '#9dc8aa', '#6ab88a', '#e2b540', '#e07840', '#cc4430'];
 
@@ -68,7 +69,7 @@ export default function TaskCard({
   showActions = false,
 }: TaskCardProps) {
   const [pinOpen, setPinOpen] = useState(false);
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = localDateKey(new Date());
   const [pinDate, setPinDate] = useState(todayStr);
   const [pinTime, setPinTime] = useState('09:00');
 

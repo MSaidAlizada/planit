@@ -13,7 +13,13 @@ function startOfDay(date: Date) {
 }
 function fmtKey(date: Date) { return date.toISOString().split('T')[0]; }
 function addDays(date: Date, n: number) { const d = new Date(date); d.setDate(d.getDate() + n); return d; }
-function sameDay(a: Date, b: Date) { return fmtKey(a) === fmtKey(b); }
+// Local calendar day equality — NOT fmtKey (which converts to UTC first).
+// Both `day.date` grid cells and `today` are plain local Date objects, so
+// comparing via UTC would mislabel "today" near local midnight (specifically,
+// any evening/night hours where the local day hasn't caught up to UTC's yet).
+function sameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
 function fmtTime(date: Date) { return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
 
 export default function MonthCalendarView({
